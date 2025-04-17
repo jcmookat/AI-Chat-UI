@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { onMounted, nextTick } from 'vue';
+import { onMounted, nextTick, watch } from 'vue';
 import { useUserStore } from '../store/user.ts';
 import { useChatStore } from '../store/chat.ts';
 import { useRouter } from 'vue-router';
 import AppHeader from '../components/AppHeader.vue';
+import ChatInput from '../components/ChatInput.vue';
 
 const userStore = useUserStore();
 const chatStore = useChatStore();
@@ -14,17 +15,51 @@ if (!userStore.userId) {
   router.push('/');
 }
 
+// Format AI messages for better display
+const formatMessage = (text: string) => {
+  if (!text) return '';
+
+  return text
+    .replace(/\n/g, '<br>') // Preserve line breaks
+    .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>') // Bold text
+    .replace(/\*(.*?)\*/g, '<i>$1</i>') // Italic text
+    .replace(/`(.*?)`/g, '<code>$1</code>') // Inline code
+    .replace(/(?:^|\n)- (.*?)(?:\n|$)/g, '<li>$1</li>') // Bullet points
+    .replace(/(?:^|\n)(\d+)\. (.*?)(?:\n|$)/g, '<li>$1. $2</li>') // Numbered lists
+    .replace(/<\/li>\n<li>/g, '</li><li>') // Ensure list continuity
+    .replace(/<li>/, '<ul><li>') // Wrap in `<ul>`
+    .replace(/<\/li>$/, '</li></ul>'); // Close the `<ul>`
+};
+
 // Auto-scroll to bottom
 const scrollToBottom = () => {
   nextTick(() => {
     const chatContainer = document.getElementById('chat-container');
-    if (chatContainer) chatContainer.scrollTop = chatContainer.scrollHeight;
+    if (chatContainer) {
+      chatContainer.scrollTo({
+        top: chatContainer.scrollHeight,
+        behavior: 'smooth',
+      });
+    }
   });
 };
+
+// Watch for changes in messages array and loading state
+watch(
+  () => [...chatStore.messages, chatStore.isLoading],
+  () => {
+    scrollToBottom();
+  },
+  { deep: true },
+);
 
 onMounted(() => {
   chatStore.loadChatHistory().then(() => scrollToBottom());
 });
+
+const handleSend = async (message: string) => {
+  await chatStore.sendMessage(message);
+};
 </script>
 
 <template>
@@ -39,12 +74,17 @@ onMounted(() => {
         :class="msg.role === 'user' ? 'justify-end' : 'justify-start'"
       >
         <div
+          v-html="formatMessage(msg.content)"
           class="max-w-xs px-4 py-2 rounded-lg text-white md:max-w-md"
           :class="msg.role === 'user' ? 'bg-blue-600' : 'bg-gray-700'"
-        >
-          {{ msg.content }}
+        ></div>
+      </div>
+      <div v-if="chatStore.isLoading" class="flex justify-start">
+        <div class="bg-gray-700 text-white px-4 py-2 rounded-lg">
+          <span class="animate-pulse">AI is thinking...</span>
         </div>
       </div>
     </div>
+    <ChatInput @send="handleSend" />
   </div>
 </template>
